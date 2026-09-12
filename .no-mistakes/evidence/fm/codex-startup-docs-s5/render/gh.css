@@ -1,0 +1,5 @@
+body{font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:#1f2328;max-width:900px;margin:0 auto;padding:32px}
+h1,h2,h3{border-bottom:1px solid #d1d9e0;padding-bottom:.3em;margin-top:24px}
+code{background:#eff1f3;padding:.2em .4em;border-radius:6px;font-size:85%}
+a{color:#0969da;text-decoration:none}
+:target{background:#fff8c5;box-shadow:0 0 0 6px #fff8c5}

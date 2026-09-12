@@ -1,0 +1,36 @@
+# fm-session-start.sh digest delivering the new Codex startup guidance
+
+## 1. Session opens on the pre-change AGENTS.md (base fb19dd9) - guidance absent
+$ grep -c 'process ancestry access' startup.txt
+0
+
+## 2. Doc change lands on disk (4336293), session compacts and rebuilds context
+$ sed -n '15,24p' compact.txt   # re-emitted instruction contract leads the digest
+
+================================================================================
+CURRENT AGENTS.md - INSTRUCTION REFRESH
+================================================================================
+The complete on-disk AGENTS.md below supersedes the instruction copy this session
+started with. Apply it as the current Firstmate instruction contract.
+
+# Firstmate
+
+This is the supervisor contract for primary firstmates and persistent secondmates.
+
+$ sed -n '182,192p' compact.txt   # guidance as delivered to the agent
+Run `bin/fm-session-start.sh` exactly once at session start.
+Its header is the single owner of composed commands, ordering, and digest contents.
+`bin/fm-supervision-instructions.sh` renders the emitted supervision block from `docs/supervision-protocols/`.
+Do not reimplement it by separately running its lock, bootstrap, initial wake-drain, or deferred-network components.
+Run-tier harness surfaces run this command for you at session open while the rest only nudge it, so confirm the digest is present in this session and run it yourself when it is not; `docs/sessionstart-nudge.md` owns adapter tiers, source routing, and compatibility.
+
+When manual Codex startup needs process ancestry access, use normal approval to run it outside the sandbox; keep sandboxing enabled for ordinary work.
+If startup already ran, diagnose rather than repeat it.
+
+Read the complete digest once and trust it as this turn's startup and recovery input.
+If the harness shows only a preview and persists the full output to a file, read that file before acting.
+
+## 3. Refresh section precedes the bulky digest
+$ grep -n '^CURRENT AGENTS.md - INSTRUCTION REFRESH$|^BOOTSTRAP$' compact.txt
+17:CURRENT AGENTS.md - INSTRUCTION REFRESH
+634:BOOTSTRAP

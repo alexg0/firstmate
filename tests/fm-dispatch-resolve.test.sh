@@ -1190,4 +1190,133 @@ expect_code 0 "$code" "--help exits 0"
 assert_contains "$out" 'Usage:' "--help prints usage"
 pass "configuration errors exit 2 before any network call"
 
+# --- intake questions share the provider request and keep authority local ---
+unset FM_DISPATCH_PROVIDER FM_DISPATCH_MODEL OPENROUTER_API_KEY
+rm -f "$HOME_DIR/.env" "$HOME_DIR/config/dispatch-never-send"
+cp "$BASE_RULES" "$RULES"
+mkdir -p "$HOME_DIR/data"
+cat > "$HOME_DIR/data/projects.md" <<'MD'
+## Projects
+- archive app [no-mistakes-prod-only +yolo branch=work/] - Document archive (added 2030-01-01)
+- php tools - PHP maintenance (added 2030-01-01)
+MD
+write_intake_response() {
+  write_response "$RESPONSE" rule_4 0.9
+  jq '.answers += {
+    project: {choice: "project_1", confidence: 0.9, probabilities: {project_1: 0.9, project_2: 0.05, unknown: 0.05}},
+    kind: {choice: "ship", confidence: 0.9, probabilities: {ship: 0.9, scout: 0.05, unknown: 0.05}},
+    effort: {choice: "low", confidence: 0.9, probabilities: {low: 0.8, medium: 0.05, high: 0.05, xhigh: 0.05, unknown: 0.05}},
+    surface: {choice: "internal", confidence: 0.9, probabilities: {internal: 0.9, product: 0.05, unknown: 0.05}}
+  }' "$RESPONSE" > "$TMP_ROOT/intake-response"
+  mv "$TMP_ROOT/intake-response" "$RESPONSE"
+}
+intake_block() {
+  awk -v key="intake-$1:" '$0 == key {on=1; print; next} /^[^ ]/ {on=0} on' <<< "$out"
+}
+write_intake_response
+reset_log
+run code out err "$BRIEF" --intake
+expect_code 0 "$code" "intake absent key exits 0"
+assert_equals '' "$out" "intake absent key has unchanged off output"
+assert_absent "$LOG/argv" "intake absent key never calls provider"
+TYPESAFE_API_KEY="$KEY" run code out err "$BRIEF" --intake
+expect_code 0 "$code" "intake exits 0"
+assert_contains "$(intake_block project)" 'resolved: archive app' "project choice maps to registered name with spaces"
+assert_contains "$(intake_block kind)" 'resolved: ship' "kind suggests ship"
+assert_contains "$(intake_block effort)" 'resolved: low' "effort suggests low"
+assert_contains "$(intake_block surface)" 'delivery: direct-PR' "clear internal surface suggests fast path"
+assert_contains "$out" 'profile: --harness' "intake rides alongside rule profile selection"
+if jq -e '.questions | keys == ["effort","kind","project","rule","surface"]' "$LOG/body" >/dev/null &&
+   jq -e '.questions.project.criteria.project_1 == "archive app: Document archive"' "$LOG/body" >/dev/null; then
+  pass "single request carries intake questions and sanitized project descriptions"
+else fail "intake request shape or registry projection incorrect"; fi
+assert_not_contains "$(cat "$LOG/body")" '+yolo' "project authority metadata never sent"
+assert_equals "Authorization: Bearer $KEY" "$(cat "$LOG/header")" "intake reuses fd3 key transport"
+assert_not_contains "$(cat "$LOG/child-env")" 'secret-present' "intake keys absent from child environments"
+
+# Each question independently gates answer confidence and chosen probability.
+for question in project kind effort surface; do
+  for field in confidence probability; do
+    write_intake_response
+    if [ "$field" = confidence ]; then
+      jq --arg q "$question" '.answers[$q].confidence = 0.59' "$RESPONSE" > "$TMP_ROOT/changed-response"
+    else
+      # Use a normalized distribution with the chosen option below the floor.
+      jq --arg q "$question" '(.answers[$q].probabilities | keys | length) as $n | .answers[$q].probabilities |= with_entries(.value = (1 / $n))' "$RESPONSE" > "$TMP_ROOT/changed-response"
+    fi
+    mv "$TMP_ROOT/changed-response" "$RESPONSE"
+    TYPESAFE_API_KEY="$KEY" run code out err "$BRIEF" --intake
+    assert_contains "$(intake_block "$question")" 'status: ambiguous' "$question low $field is ambiguous"
+    assert_not_contains "$(intake_block "$question")" 'resolved:' "$question low $field cannot resolve"
+    if [ "$question" = surface ]; then
+      assert_contains "$(intake_block surface)" 'delivery: no-mistakes' "low $field surface keeps full pipeline"
+    fi
+  done
+done
+
+write_intake_response
+jq '.answers.kind = {choice: "scout", confidence: 0.9, probabilities: {scout: 0.9, ship: 0.05, unknown: 0.05}} |
+    .answers.effort = {choice: "xhigh", confidence: 0.9, probabilities: {xhigh: 0.8, low: 0.05, medium: 0.05, high: 0.05, unknown: 0.05}} |
+    .answers.surface = {choice: "product", confidence: 0.9, probabilities: {product: 0.9, internal: 0.05, unknown: 0.05}}' "$RESPONSE" > "$TMP_ROOT/changed-response"
+mv "$TMP_ROOT/changed-response" "$RESPONSE"
+TYPESAFE_API_KEY="$KEY" run code out err "$BRIEF" --intake --project explicit
+assert_not_contains "$out" 'intake-project:' "explicit project bypasses model project selection"
+assert_contains "$(intake_block kind)" 'resolved: scout' "investigation suggests scout"
+assert_contains "$(intake_block effort)" 'resolved: xhigh' "ambiguous design suggests xhigh"
+assert_contains "$(intake_block surface)" 'delivery: no-mistakes' "product surface keeps full pipeline"
+
+for invalid in unknown missing bad-choice bad-probabilities; do
+  write_intake_response
+  case "$invalid" in
+    unknown) filter='.answers.surface = {choice: "unknown", confidence: 0.99, probabilities: {unknown: 0.99, internal: 0.005, product: 0.005}}' ;;
+    missing) filter='del(.answers.surface)' ;;
+    bad-choice) filter='.answers.surface.choice = "merge"' ;;
+    bad-probabilities) filter='.answers.surface.probabilities.internal = 5' ;;
+  esac
+  jq "$filter" "$RESPONSE" > "$TMP_ROOT/changed-response"
+  mv "$TMP_ROOT/changed-response" "$RESPONSE"
+  TYPESAFE_API_KEY="$KEY" run code out err "$BRIEF" --intake
+  assert_contains "$(intake_block surface)" 'delivery: no-mistakes' "$invalid surface keeps full pipeline"
+done
+
+write_intake_response
+FM_DISPATCH_PROVIDER=openrouter FM_DISPATCH_MODEL=test-model OPENROUTER_API_KEY="$KEY" run code out err "$BRIEF" --intake
+assert_contains "$(intake_block project)" 'resolved: archive app' "OpenRouter shares intake validation"
+assert_contains "$(cat "$LOG/argv")" 'https://openrouter.ai/api/alpha/decisions' "intake reuses selected provider"
+
+# A profile/quota failure does not overwrite independently clear intake evidence.
+write_intake_response
+FAKE_QUOTA_FAIL=1 TYPESAFE_API_KEY="$KEY" run code out err "$BRIEF" --intake
+assert_contains "$(intake_block surface)" 'delivery: direct-PR' "quota failure preserves independent surface evidence"
+assert_contains "$out" 'reason: quota-axi --json failed' "quota failure still prevents clear profile selection"
+assert_equals '1' "$(grep -c '^intake-surface:' <<< "$out")" "quota failure emits only one surface block"
+
+# Failed providers cannot turn an uncertain surface into a faster delivery mode.
+FAKE_CURL_HTTP=503 TYPESAFE_API_KEY="$KEY" run code out err "$BRIEF" --intake
+assert_contains "$(intake_block surface)" 'delivery: no-mistakes' "provider HTTP error keeps full pipeline"
+printf 'not-json' > "$RESPONSE"
+TYPESAFE_API_KEY="$KEY" run code out err "$BRIEF" --intake
+assert_contains "$(intake_block surface)" 'delivery: no-mistakes' "invalid JSON keeps full pipeline"
+write_intake_response
+printf 'Document archive\n' > "$HOME_DIR/config/dispatch-never-send"
+reset_log
+TYPESAFE_API_KEY="$KEY" run code out err "$BRIEF" --intake
+assert_equals '' "$out" "never-send registry match leaves intake off"
+assert_absent "$LOG/argv" "never-send protects project descriptions before provider call"
+rm "$HOME_DIR/config/dispatch-never-send"
+
+# No profile rules or registry still permits the other intake answers.
+rm "$RULES"
+reset_log
+TYPESAFE_API_KEY="$KEY" run code out err "$BRIEF" --intake
+assert_contains "$(intake_block project)" 'resolved: archive app' "intake works without dispatch config"
+assert_absent "$LOG/quota-axi.calls" "intake without rules needs no quota"
+rm "$HOME_DIR/data/projects.md"
+write_intake_response
+jq '.answers.project = {choice: "unknown", confidence: 1, probabilities: {unknown: 1}}' "$RESPONSE" > "$TMP_ROOT/changed-response"
+mv "$TMP_ROOT/changed-response" "$RESPONSE"
+TYPESAFE_API_KEY="$KEY" run code out err "$BRIEF" --intake
+assert_contains "$(intake_block project)" 'status: ambiguous' "absent registry cannot choose a project"
+assert_not_contains "$(intake_block project)" 'resolved:' "unknown project requires existing intake question"
+
 printf '# all fm-dispatch-resolve tests passed\n'

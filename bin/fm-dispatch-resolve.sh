@@ -3,7 +3,20 @@
 # profile from a task brief with a configurable model provider, opt-in.
 #
 # Usage:
-#   fm-dispatch-resolve.sh <brief-file> [--project <name>]
+#   fm-dispatch-resolve.sh <brief-file> [--project <name>] [--intake]
+#
+# --intake also asks advisory task-kind, effort, and change-surface questions in
+#   the same POST. Without --project it matches data/projects.md names and
+#   descriptions (FM_DATA_OVERRIDE supported), with a fixed unknown option.
+#   Accepts a short ask file before a brief exists; works without dispatch rules.
+#   Each intake-<question> block has status, choice, confidence, probabilities,
+#   and resolved (clear only). Both confidence and chosen probability must meet
+#   0.6; unknown is ambiguous. Surface always emits delivery: no-mistakes unless
+#   internal is clear, when it suggests direct-PR only for prod-only projects.
+#   Intake errors leave existing intake in charge; missing/uncertain surface
+#   means no-mistakes on prod-only projects. Off keeps original intake. These answers never grant
+#   implementation, merge, approval, or destructive-operation authority. Effort
+#   never overrides explicit or configured effort and never suggests max.
 #
 # Opt-in gate: FM_DISPATCH_PROVIDER and FM_DISPATCH_MODEL select the provider
 #   and model from the environment or $FM_HOME/.env (environment wins). With no
@@ -118,10 +131,13 @@ usage() {
   ' "$0"
 }
 
+INTAKE=false
+INTAKE_EMITTED=false
 BRIEF='' PROJECT='' RULES_PATH="$CONFIG/crew-dispatch.json" RULES=''
 NEVER_SEND_PATH="$CONFIG/dispatch-never-send"
 while [ $# -gt 0 ]; do
   case "$1" in
+    --intake) INTAKE=true; shift ;;
     --project) [ $# -ge 2 ] || die "--project needs a value"; PROJECT=$2; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     -*) die "unknown flag $1" ;;
@@ -166,12 +182,19 @@ esac
 # ---- inputs --------------------------------------------------------------------
 [ -n "$BRIEF" ] || die "brief file required (see --help)"
 [ -r "$BRIEF" ] || die "brief file not readable: $BRIEF"
-[ -e "$RULES_PATH" ] || [ -L "$RULES_PATH" ] || no_rules
-[ -r "$RULES_PATH" ] || die "rules file not readable: $RULES_PATH"
+if [ ! -e "$RULES_PATH" ] && [ ! -L "$RULES_PATH" ]; then
+  "$INTAKE" || no_rules
+elif [ ! -r "$RULES_PATH" ]; then
+  die "rules file not readable: $RULES_PATH"
+fi
 command -v jq >/dev/null 2>&1 || die "jq required"
 RULES=$(mktemp) || die "mktemp failed"
 trap 'rm -f "$RULES"' EXIT
-cp "$RULES_PATH" "$RULES" || die "could not snapshot rules file: $RULES_PATH"
+if [ -e "$RULES_PATH" ]; then
+  cp "$RULES_PATH" "$RULES" || die "could not snapshot rules file: $RULES_PATH"
+else
+  printf '{"rules": []}\n' > "$RULES"
+fi
 chmod 400 "$RULES" || die "could not protect rules snapshot"
 VERIFIED_HARNESSES=$(fm_control_harnesses | jq -Rsc 'split("\n") | map(select(length > 0))')
 
@@ -268,11 +291,14 @@ RULE_COUNT=$(jq -r '(.rules // []) | length' "$RULES")
 emit_error() {
   local reason=$1
   echo "dispatch-resolve: error ($reason)" >&2
+  if "$INTAKE" && ! "$INTAKE_EMITTED"; then
+    printf 'intake-surface:\n  status: error\n  delivery: no-mistakes\n'
+  fi
   printf 'dispatch-resolve:\n  status: error\n  reason: %s\n' "$reason"
   exit 0
 }
 
-if [ "$RULE_COUNT" -eq 0 ]; then
+if [ "$RULE_COUNT" -eq 0 ] && ! "$INTAKE"; then
   no_rules
 fi
 
@@ -339,22 +365,46 @@ if [ -n "$SECTIONS" ]; then
 else
   cp "$BRIEF" "$TASK_TEXT" || die "could not read brief: $BRIEF"
 fi
+PROJECTS='[]'
+if "$INTAKE" && [ -z "$PROJECT" ]; then
+  REGISTRY="${FM_DATA_OVERRIDE:-$FM_HOME/data}/projects.md"
+  if [ -e "$REGISTRY" ] || [ -L "$REGISTRY" ]; then
+    [ -f "$REGISTRY" ] && [ -r "$REGISTRY" ] || die "project registry not readable: $REGISTRY"
+    # Strip delivery/authority metadata: the model sees only identity and description.
+    PROJECTS=$(jq -Rsc '
+      split("\n") | map(select(startswith("- ")) |
+        capture("^- (?<name>.+?)(?: [[][^]]*])? - (?<description>.*)$") |
+        .description |= sub(" [(]added [^)]*[)]$"; ""))
+      | if (map(.name) | length) != (map(.name) | unique | length)
+        then error("duplicate projects") else . end
+    ' "$REGISTRY" 2>/dev/null) || die "malformed project registry: $REGISTRY"
+  fi
+fi
 LAT_MS=null
 command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   REQUEST=$(jq -n --rawfile brief "$TASK_TEXT" --arg project "$PROJECT" --arg model "$DISPATCH_MODEL" \
+    --argjson intake "$INTAKE" --argjson projects "$PROJECTS" \
     --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
     ($rules[0]) as $cfg |
-    ($cfg.rules | to_entries | map({key: ("rule_" + ((.key + 1) | tostring)), value: .value.when}) | from_entries) as $criteria |
+    (($cfg.rules // []) | to_entries | map({key: ("rule_" + ((.key + 1) | tostring)), value: .value.when}) | from_entries) as $criteria |
     {
       model: $model,
       state: {task: {project: $project, brief: $brief}},
-      questions: {
+      questions: (if ($cfg.rules | length) > 0 then {
         rule: {
           type: "choice",
           instructions: "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule'"'"'s own matching condition; pick `default` when no rule'"'"'s condition is met, including when a rule'"'"'s own exemption text excludes this task.",
           criteria: ($criteria + {default: $none_criterion})
         }
-      }
+      } else {} end)
+      + (if $intake then {
+          kind: {type: "choice", instructions: "What deliverable does the request authorize? Choose scout for diagnosis, investigation, planning, audit or a separate knowledge deliverable, ship for authorized implementation. Choose unknown when intent is unclear; a recommendation alone is not authorization to implement.", criteria: {ship: "Build or change the project", scout: "Investigate and report knowledge", unknown: "Unclear deliverable"}},
+          effort: {type: "choice", instructions: "Suggest effort from task complexity: low for well-understood explicit work, xhigh for ambiguous investigation or design, intermediate levels proportionally. This cannot override explicit or configured effort.", criteria: {low: "Well-understood explicit work", medium: "Moderate complexity", high: "Complex but bounded work", xhigh: "Ambiguous investigation or design", unknown: "Insufficient information"}},
+          surface: {type: "choice", instructions: "Classify the resulting change surface. Internal means exclusively tooling, automation, contributor/operator process, or release/submission work. Product-facing, mixed, and uncertain work requires full validation; never infer internal-only from file location or project name.", criteria: {internal: "Exclusively internal work", product: "Product-facing or mixed work", unknown: "Uncertain change surface"}}
+        } + (if $project == "" then {project: {
+          type: "choice", instructions: "Which registered project does this request refer to? Choose unknown if no single project is clear. Explicit project names win.",
+          criteria: (($projects | to_entries | map({key: ("project_" + ((.key + 1) | tostring)), value: (.value.name + ": " + .value.description)}) | from_entries) + {unknown: "No single registered project is clear"})
+        }} else {} end) else {} end)
     }')
   never_send_check
   T0=$(fm_timing_now_ms)
@@ -376,6 +426,37 @@ command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   else
     [ "$HTTP" = 200 ] || emit_error "http $HTTP after ${LAT_MS} ms: $(head -c 200 "$RESP_FILE" 2>/dev/null | tr '\n' ' ')"
   fi
+if "$INTAKE"; then
+  jq -nr --argjson request "$REQUEST" --argjson projects "$PROJECTS" --argjson floor "$CONFIDENCE_FLOOR" --slurpfile response "$RESP_FILE" '
+    def flat: tostring | gsub("[\t\r\n]"; " ");
+    $request.questions | to_entries[] | select(.key != "rule") |
+    .key as $key | (.value.criteria | keys | sort) as $options |
+    $response[0].answers[$key] as $a |
+    (try (
+      ($a.choice | type) == "string" and ($options | index($a.choice)) != null and
+      ($a.confidence | type) == "number" and $a.confidence >= 0 and $a.confidence <= 1 and
+      ($a.probabilities | type) == "object" and ($a.probabilities | keys | sort) == $options and
+      all($a.probabilities[]; type == "number" and . >= 0 and . <= 1) and
+      (($a.probabilities | [.[]] | add) as $sum | $sum >= 0.99 and $sum <= 1.01)
+    ) catch false) as $valid |
+    (if $valid then
+       if $a.choice != "unknown" and $a.confidence >= $floor and $a.probabilities[$a.choice] >= $floor
+       then "clear" else "ambiguous" end
+     else "error" end) as $status |
+    "intake-\($key):",
+    "  status: \($status)",
+    (if $valid then
+      "  choice: \($a.choice | flat)   confidence: \($a.confidence)",
+      "  probabilities: \([$a.probabilities | to_entries[] | "\(.key)=\(.value)"] | join(" "))",
+      (if $status == "clear" then "  resolved: " +
+        (if $key == "project" then $projects[($a.choice | ltrimstr("project_") | tonumber) - 1].name else $a.choice end | flat)
+       else empty end)
+     else "  reason: invalid or missing Choice answer" end),
+    (if $key == "surface" then "  delivery: " + (if $status == "clear" and $a.choice == "internal" then "direct-PR" else "no-mistakes" end) else empty end)
+  ' 2>/dev/null || emit_error "intake response is not JSON"
+  INTAKE_EMITTED=true
+fi
+[ "$RULE_COUNT" -gt 0 ] || no_rules
 jq -e --slurpfile rules "$RULES" '
     (($rules[0].rules | to_entries | map("rule_" + ((.key + 1) | tostring))) + ["default"] | sort) as $choices |
     (.answers.rule.choice | type) == "string" and

@@ -1638,16 +1638,36 @@ This section is the single owner of the tool's operator contract; the script hea
 Rules come only from the effective home's `config/crew-dispatch.json`; `FM_CONFIG_OVERRIDE` selects the config directory for tests and specialized setup like the other scripts.
 
 ```sh
-bin/fm-dispatch-resolve.sh data/<id>/brief.md --project <name>        # TOON block on stdout
+bin/fm-dispatch-resolve.sh data/<id>/ask.md --intake                  # implicit project intake
+bin/fm-dispatch-resolve.sh data/<id>/brief.md --project <name> --intake # intake and profile evidence
 ```
 
 **When firstmate invokes the resolver**
 
-Firstmate invokes the resolve path directly after writing the brief, without a preflight; the absent-key off line is handled exactly like every other non-clear outcome.
+When the request has no explicit project or clear follow-up referent, firstmate writes the short ask to a task-local file and invokes the resolver with `--intake` before selecting a project or writing its brief.
+A clear project answer identifies one registered project; an ambiguous answer becomes one concise question rather than a guessed project.
+Off or error keeps the existing project-matching procedure.
+After writing the brief, firstmate invokes `--intake --project <name>` directly without a preflight, combining task kind, effort, surface, and profile evidence in one provider call.
+An explicit project is never reselected by the model.
+
+With `--intake`, project options come from the effective home's `data/projects.md` (`FM_DATA_OVERRIDE` supported), using registered names and descriptions without delivery, merge, branch, or forge metadata.
+A missing registry supplies only the unknown option, and intake questions still run when no dispatch rules exist.
+The script header owns the exact invocation and output fields.
+Each intake answer includes per-option probabilities and its own status: clear requires both answer confidence and the chosen option's probability to meet the resolver's confidence floor; unknown or below-floor answers are ambiguous, and malformed or missing answers are errors.
+One uncertain answer does not invalidate the other questions or grant dispatch authority.
+
+Clear task-kind answers suggest ship or scout; firstmate still owns authorization and honors explicit implementation or knowledge-only intent.
+Clear effort answers suggest low, medium, high, or xhigh without overriding an explicit request or configured profile effort; ambiguous/error answers keep the existing effort procedure.
+For `no-mistakes-prod-only` projects, only a clear internal surface answer suggests `direct-PR`; product-facing, mixed, unknown, below-floor, malformed, missing, and failed answers all keep `no-mistakes`.
+Internal means exclusively tooling, automation, contributor/operator process, or release/submission work; neither file location nor project name proves that scope.
+The surface suggestion does not change any other project's registered delivery mode.
+When the provider is off, existing intake and surface classification remain unchanged.
+These answers are advisory evidence and never decide approval, merge, destructive operations, or captain authority.
 
 **What the model receives**
 
-When on and at least one rule exists, the tool sends the project name and the brief's task-specific text as state and asks one Choice question whose options are every rule's `when` plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, approvals, or confidence floors.
+When on, the tool sends the project name and task-specific text as state, asking a rule Choice question when rules exist and the intake Choice questions when `--intake` is selected; the model never sees quota, catalogs, `why`, `use`, approvals, or confidence floors.
+The rule options remain every rule's `when` plus the fixed neutral option for no matching rule.
 OpenRouter's Decisions API accepts the same Choice request shape and returns the same typed answer, including confidence and a probability per option; both providers use the same response validation and post-model gates.
 The task-specific text is the brief's `## Captain's intent` and `## Firstmate spec` sections under `# Task` that `bin/fm-brief.sh` scaffolds, read by the same parser that feeds `fm-spawn.sh` validation and the no-mistakes `--intent` contract; a brief with neither section is sent whole.
 
@@ -1677,7 +1697,9 @@ That one diagnostic names the list line number at most and never prints the list
 
 **Missing or invalid rules**
 
-An absent rules file, a default-only file, or `rules: []` returns the non-clear reason `no rules to match` without a model or quota request, leaving firstmate's existing routing in control; an existing but unreadable or malformed rules file, including a broken symlink, remains an actionable exit 2 configuration error.
+An absent rules file, a default-only file, or `rules: []` returns the non-clear dispatch reason `no rules to match`, leaving firstmate's existing profile routing in control.
+Without `--intake` this makes no model or quota request; with `--intake` the model still answers the intake questions without a quota request.
+An existing but unreadable or malformed rules file, including a broken symlink, remains an actionable exit 2 configuration error.
 
 **Checks performed after the answer**
 
@@ -1693,7 +1715,7 @@ The [shared quota library](../bin/fm-quota-axi-lib.sh) accepts schema 5 and sche
 - An expanded provider with no matching account row leaves the candidate eligible but unranked.
 - Known applicable rows from a provider with partial quota semantics remain rankable; rows whose own status is not known remain unrankable.
 
-**Confidence and fallback rules**
+**Rule confidence and fallback**
 
 - A rule that declares `min_confidence` is checked against that rule's own probability, whether it is the picked option or a runner-up, so a runner-up never needs weaker support than it would as the pick.
 - A picked rule without `min_confidence`, and the neutral option, keep the global 0.6 floor on the answer's confidence exactly as before, so a file with no declared floors behaves as it did.
@@ -1711,7 +1733,7 @@ No qualifying option, or two equally probable qualifying options, produces `ambi
 - Missing or nonnumeric `spendPriority` evidence is never ranked, and every candidate is printed beside its evidence or the reason it was not rankable, including on ambiguous and approval-gated outcomes that emit no profile.
 - On the opted-in path, duplicate concrete profiles with the same harness, model, and effort inside one rule or the default array are configuration errors rather than ties.
 
-**Outcomes and exit status**
+**Dispatch outcomes and exit status**
 
 | Result | Meaning |
 | --- | --- |
@@ -1723,7 +1745,7 @@ No qualifying option, or two equally probable qualifying options, produces `ambi
 Every result above exits 0.
 
 - Response probabilities must contain exactly every offered choice, use numeric values from 0 through 1, and sum to approximately 1 within 0.01.
-- Only a usage or configuration error exits 2: an unreadable brief, an existing but unreadable or malformed canonical rules file, a missing `jq`, an unknown provider, or an OpenRouter provider without a model, each reported and never selected around.
+- Only a usage or configuration error exits 2: an unreadable brief, an existing but unreadable or malformed canonical rules file, a missing `jq`, an unreadable or duplicate-name project registry, an unknown provider, or an OpenRouter provider without a model, each reported and never selected around.
 - Missing `curl` is a normal structured `error` outcome with exit 0 so firstmate uses today's routing.
 
 **Firstmate retains the dispatch decision**

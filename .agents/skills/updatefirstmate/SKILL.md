@@ -44,6 +44,7 @@ This touches only the firstmate repo and its own worktrees, never anything under
    bin/fm-update.sh
    ```
    It updates this firstmate repo's default branch from origin, then updates every registered local or remote secondmate home through its placement-specific guarded path.
+   Optional primary mirroring follows [`config/update-push-remote`](../../../docs/configuration.md#update-mirroring-configupdate-push-remote); surface any push warning while continuing the successful update flow.
    It prints one status line per target (`updated <old>..<new>` / `rebased <n> local commit(s) onto <new>` / `reconciled redundant divergence <old>..<new>` / `already current` / `skipped: <reason>`), followed by three action lines that tell you exactly what to do next:
    - `reread-firstmate: yes|no`
    - `restart-secondmates: fm-<id>...|none`

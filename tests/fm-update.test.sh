@@ -177,6 +177,155 @@ test_updates_main_and_secondmate() {
   pass "T1 main + secondmate fast-forward (single-parent), reread + restart signalled"
 }
 
+# A separate bare repository is the opt-in publication endpoint.
+add_push_remote() {
+  local w=$1
+  git clone -q --bare "$w/origin.git" "$w/mirror.git"
+  git -C "$w/main" remote add mirror "$w/mirror.git"
+  mkdir -p "$w/home/config"
+  printf 'mirror\n' > "$w/home/config/update-push-remote"
+}
+
+test_primary_push_opt_in() {
+  local w out before mode
+  for mode in absent empty; do
+    w=$(new_world "push-$mode")
+    add_push_remote "$w"
+    before=$(git -C "$w/mirror.git" rev-parse main)
+    if [ "$mode" = absent ]; then
+      rm "$w/home/config/update-push-remote"
+    else
+      : > "$w/home/config/update-push-remote"
+    fi
+    bump_origin "$w" readme
+    out=$(run_update "$w")
+    assert_contains "$out" 'firstmate: updated ' "unset push still updates"
+    assert_not_contains "$out" 'firstmate push:' "unset push remains silent"
+    [ "$(git -C "$w/mirror.git" rev-parse main)" = "$before" ] || fail "unset config pushed"
+  done
+  pass "primary push is off for absent and empty config"
+}
+
+test_primary_push_with_lease() {
+  local w out old mode
+  for mode in rebase fast-forward new-branch push-url; do
+    w=$(new_world "push-$mode")
+    add_push_remote "$w"
+    if [ "$mode" = rebase ]; then
+      printf 'local\n' > "$w/main/local.txt"
+      git -C "$w/main" add local.txt
+      git -C "$w/main" commit -qm local
+      git -C "$w/main" push -q mirror main
+    elif [ "$mode" = new-branch ]; then
+      git -C "$w/mirror.git" update-ref -d refs/heads/main
+    fi
+    if [ "$mode" = push-url ]; then
+      git -C "$w/main" remote set-url mirror "$w/origin.git"
+      git -C "$w/main" remote set-url --push mirror "$w/mirror.git"
+    fi
+    old=$(git -C "$w/main" rev-parse HEAD)
+    git -C "$w/main" tag -a -m private private-tag
+    git -C "$w/main" config push.followTags true
+    bump_origin "$w" instr
+    out=$(run_update "$w")
+    assert_contains "$out" 'firstmate push: updated mirror/main' "opt-in push reported"
+    [ "$(git -C "$w/mirror.git" rev-parse main)" = "$(git -C "$w/main" rev-parse main)" ] || fail "mirror not updated"
+    [ -z "$(git -C "$w/mirror.git" tag)" ] || fail "push published tags"
+    if [ "$mode" = rebase ]; then
+      git -C "$w/mirror.git" merge-base --is-ancestor "$old" main && fail "test did not require a non-fast-forward push"
+      assert_grep local "$w/main/local.txt" "rebase lost local content"
+    fi
+    out=$(run_update "$w")
+    assert_not_contains "$out" 'firstmate push:' "unchanged primary must not push"
+  done
+  pass "opt-in primary push handles rewritten history, advances and absent branches"
+}
+
+test_primary_push_refusals() {
+  local w out before mode
+  for mode in missing source push-source source-alias multi secondmate; do
+    w=$(new_world "push-refuse-$mode")
+    add_push_remote "$w"
+    before=$(git -C "$w/mirror.git" rev-parse main)
+    case "$mode" in
+      missing) printf 'unknown\n' > "$w/home/config/update-push-remote" ;;
+      source) git -C "$w/main" remote set-url --push mirror "file://$w/origin.git" ;;
+      push-source)
+        git -C "$w/main" remote set-url mirror "$w/mirror.git"
+        git -C "$w/main" remote set-url --push mirror "$w/origin.git"
+        ;;
+      source-alias)
+        ln -s "$w/origin.git" "$w/origin-alias.git"
+        git -C "$w/main" remote set-url --push mirror "$w/origin-alias.git"
+        ;;
+      multi)
+        git -C "$w/main" remote set-url --add --push mirror "$w/mirror.git"
+        git -C "$w/main" remote set-url --add --push mirror "$w/origin.git"
+        ;;
+      secondmate) touch "$w/home/.fm-secondmate-home" ;;
+    esac
+    bump_origin "$w" readme
+    out=$(run_update "$w") || fail "push refusal failed update"
+    assert_contains "$out" 'firstmate: updated ' "refused push must preserve successful update"
+    case "$mode" in
+      missing) assert_contains "$out" 'configured remote does not exist' "missing remote reported" ;;
+      source|push-source|source-alias) assert_contains "$out" 'destination is the update source' "source push refused" ;;
+      multi) assert_contains "$out" 'requires exactly one push URL' "multiple URLs refused" ;;
+      secondmate) assert_not_contains "$out" 'firstmate push:' "secondmate never publishes" ;;
+    esac
+    [ "$(git -C "$w/mirror.git" rev-parse main)" = "$before" ] || fail "refused destination moved"
+    [ "$(git -C "$w/main" rev-parse HEAD)" = "$(git -C "$w/seed" rev-parse HEAD)" ] || fail "update did not complete"
+  done
+  pass "unsafe or missing push destinations are skipped without failing update"
+}
+
+test_primary_push_failure() {
+  local w out before raced mode real_git
+  real_git=$(command -v git)
+  for mode in lease rejected; do
+    w=$(new_world "push-failure-$mode")
+    add_push_remote "$w"
+    before=$(git -C "$w/mirror.git" rev-parse main)
+    bump_origin "$w" readme
+    if [ "$mode" = lease ]; then
+      # Advance the destination before the real push reads its advertisement,
+      # after the updater has fetched its lease. This distinguishes a pinned
+      # lease from bare force, which would overwrite the competing commit.
+      raced=$(printf 'competing writer\n' | git -C "$w/mirror.git" commit-tree "${before}^{tree}" -p "$before")
+      {
+        printf '#!/usr/bin/env bash\n'
+        printf 'real_git=%q\nworld=%q\nraced=%q\n' "$real_git" "$w" "$raced"
+        cat <<'SH'
+for arg in "$@"; do
+  if [ "$arg" = push ]; then
+    "$real_git" -C "$world/mirror.git" update-ref refs/heads/main "$raced"
+    "$real_git" -C "$world/main" update-ref refs/remotes/mirror/main "$raced"
+    printf 'push\n' >> "$world/push-attempts"
+    break
+  fi
+done
+exec "$real_git" "$@"
+SH
+      } > "$w/fakebin/git"
+      chmod +x "$w/fakebin/git"
+    else
+      raced=$before
+      printf '#!/usr/bin/env bash\nexit 1\n' > "$w/mirror.git/hooks/pre-receive"
+      chmod +x "$w/mirror.git/hooks/pre-receive"
+    fi
+    out=$(run_update "$w") || fail "push failure failed update"
+    assert_contains "$out" 'firstmate push: failed (update succeeded; no retry)' "push failure reported"
+    if [ "$mode" = lease ]; then
+      assert_contains "$out" 'stale info' "explicit lease did not reject stale snapshot"
+      [ "$(wc -l < "$w/push-attempts" | tr -d ' ')" = 1 ] || fail "refused lease was retried"
+    fi
+    [ "$(git -C "$w/mirror.git" rev-parse main)" = "$raced" ] || fail "failed push overwrote destination"
+    [ "$(git -C "$w/main" rev-parse HEAD)" = "$(git -C "$w/seed" rev-parse HEAD)" ] || fail "push failure undid update"
+    assert_contains "$out" 'reread-firstmate: no' "push failure lost action summary"
+  done
+  pass "lease races and hook refusals preserve remote work and successful updates"
+}
+
 # Primary-only local history is replayed onto an advanced origin.
 test_primary_local_rebase() {
   local w out before upstream
@@ -643,6 +792,10 @@ test_primary_update_rebinds_local_watch() {
 }
 
 test_updates_main_and_secondmate
+test_primary_push_opt_in
+test_primary_push_with_lease
+test_primary_push_refusals
+test_primary_push_failure
 test_primary_local_rebase
 test_primary_conflicting_rebase
 test_primary_rebase_guards

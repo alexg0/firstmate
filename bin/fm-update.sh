@@ -65,6 +65,14 @@
 # fm-procevent-when.sh rebind-all to republish those bindings against the new
 # bytes; a failure there is swallowed rather than failing the update.
 #
+# Optional config/update-push-remote names one existing remote for primary-only
+# mirroring after a successful update moves the default branch. Empty means off.
+# Resolve its single push URL, refuse the origin repository (including alternate
+# URL spellings), fetch the destination branch, and pin --force-with-lease to
+# that fetched object. A missing destination branch uses an empty lease.
+# Push only that branch, never tags; report any refusal without retry or rollback.
+# Secondmate homes never publish, even when their own updater is invoked.
+#
 # Usage: fm-update.sh [--help]
 set -eu
 
@@ -88,6 +96,73 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
 fi
 [ $# -eq 0 ] || { usage; exit 1; }
 
+# shellcheck source=bin/fm-role-lib.sh
+. "$SCRIPT_DIR/fm-role-lib.sh"
+
+update_repository_identity() {
+  local identity common
+  identity=$(fm_role_remote_identity "$1" "$FM_ROOT" nolocal)
+  case "$identity" in
+    path:*)
+      common=$(fm_role_git_common_dir "${identity#path:}")
+      [ -z "$common" ] || identity="path:$common"
+      ;;
+  esac
+  printf '%s\n' "$identity"
+}
+
+push_updated_primary() {
+  local remote config branch source destination source_id destination_id advertised expected='' out
+  [ ! -e "$FM_HOME/.fm-secondmate-home" ] && [ ! -e "$FM_ROOT/.fm-secondmate-home" ] || return 0
+  config="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/update-push-remote"
+  [ -f "$config" ] || return 0
+  if ! remote=$(cat "$config"); then
+    echo "firstmate push: skipped: cannot read configuration"
+    return 0
+  fi
+  remote=${remote#"${remote%%[![:space:]]*}"}
+  remote=${remote%"${remote##*[![:space:]]}"}
+  [ -n "$remote" ] || return 0
+  if ! git -C "$FM_ROOT" remote | grep -Fxq -- "$remote"; then
+    echo "firstmate push: skipped: configured remote does not exist"
+    return 0
+  fi
+  source=$(git -C "$FM_ROOT" remote get-url origin) || return 0
+  destination=$(git -C "$FM_ROOT" remote get-url --push --all "$remote") || return 0
+  case "$destination" in
+    ''|*$'\n'*) echo "firstmate push: skipped: requires exactly one push URL"; return 0 ;;
+  esac
+  source_id=$(update_repository_identity "$source")
+  destination_id=$(update_repository_identity "$destination")
+  if [ -z "$source_id" ] || [ -z "$destination_id" ] || [ "$source_id" = "$destination_id" ]; then
+    echo "firstmate push: skipped: destination is the update source or cannot be identified"
+    return 0
+  fi
+  branch=$(default_branch "$FM_ROOT") || return 0
+  # Query the push endpoint, which may differ from the remote's fetch URL.
+  # An absent branch is safe to create only while it remains absent.
+  if ! advertised=$(GIT_TERMINAL_PROMPT=0 git -C "$FM_ROOT" ls-remote --refs -- "$destination" "refs/heads/$branch" 2>/dev/null); then
+    echo "firstmate push: skipped: cannot read destination branch"
+    return 0
+  fi
+  if [ -n "$advertised" ]; then
+    expected=${advertised%%$'\t'*}
+    if ! GIT_TERMINAL_PROMPT=0 git -C "$FM_ROOT" fetch --quiet --no-tags --no-write-fetch-head -- "$destination" "$expected" 2>/dev/null; then
+      echo "firstmate push: skipped: destination fetch failed"
+      return 0
+    fi
+  fi
+  # Use a URL and explicit refspec so remote mirror/refspec settings cannot
+  # broaden this operation. Pin the lease, independent of background fetches.
+  if out=$(GIT_TERMINAL_PROMPT=0 git -C "$FM_ROOT" -c push.followTags=false -c push.recurseSubmodules=no push --porcelain \
+    "--force-with-lease=refs/heads/$branch:$expected" -- "$destination" \
+    "refs/heads/$branch:refs/heads/$branch" 2>&1); then
+    echo "firstmate push: updated $remote/$branch"
+  else
+    echo "firstmate push: failed (update succeeded; no retry): $out"
+  fi
+}
+
 # --- main firstmate repo ---------------------------------------------------
 
 reread_firstmate="no"
@@ -96,6 +171,7 @@ if [ "$FF_STATUS" = "updated" ]; then
   if [ -n "$FF_INSTR" ]; then
     reread_firstmate="yes"
   fi
+  push_updated_primary
   # A fast-forward changes bin/'s bytes out from under any locally armed
   # fm-procevent-when watch's trust binding, with no tampering involved; left
   # alone, the very next fire is refused and the watch dies silently. Refresh

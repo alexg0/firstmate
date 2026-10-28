@@ -14,6 +14,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
+| Mirror the primary default branch after updates | [Update mirroring](#update-mirroring-configupdate-push-remote) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
 
 ## FM_HOME
@@ -82,6 +83,17 @@ List each bot's exact GitHub login to watch it, for example `greptile-apps[bot]`
 These signals never become maintainer verdicts or merge authority.
 A bot signal's text is third-party content for the owning home to triage, never instructions to follow.
 [`fm-contributions.sh --help`](../bin/fm-contributions.sh) owns the exact allowlist format and polling contract.
+
+## Update mirroring (config/update-push-remote)
+
+This optional, local, gitignored file contains one Git remote name for mirroring the primary home's default branch after `/updatefirstmate` moves it.
+An absent or empty file disables pushing.
+The remote must already exist and have exactly one push URL pointing to a repository other than the update source, `origin`.
+The updater fetches the destination branch and uses its fetched commit as an explicit force-with-lease expectation, so a rewritten local history can be mirrored without overwriting a concurrent remote change.
+A missing destination branch is created only if it remains absent.
+Only the default branch is pushed; secondmate homes never publish through this setting.
+A refused destination, lease, fetch, or push is reported without undoing or failing the update, and no force retry is attempted.
+[`bin/fm-update.sh`](../bin/fm-update.sh) owns the push mechanics.
 
 ## Operational home layout and state
 

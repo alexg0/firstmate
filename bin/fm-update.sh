@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Self-update a running firstmate and its secondmates to the latest origin.
 #
-# Mechanical half of the /updatefirstmate skill. Fast-forwards the running
-# firstmate repo's default branch from origin, then fast-forwards every
-# registered secondmate home. Local homes are treehouse worktrees or standalone
+# Mechanical half of the /updatefirstmate skill. Updates the running firstmate
+# default branch from origin, rebasing clean local commits when origin advances,
+# then fast-forwards every registered secondmate home.
+# Local homes are treehouse worktrees or standalone
 # clones; remote routes update their configured code root on that host and then
-# fast-forward the persistent home to that root. FAST-FORWARD ONLY, exactly like
-# fm-fleet-sync.sh: never force, never create a merge commit, never stash.
+# fast-forward the persistent home to that root. Secondmate ancestry rules stay
+# identical to fm-fleet-sync.sh. Never force or stash. Primary rebase failure
+# aborts to the original HEAD and reports a diverged skip; success prints the
+# previous HEAD for recovery and participates in the instruction reread decision.
 # A secondmate divergence whose complete local tree result is already present at
 # the target is reconciled with reset --keep; every other unsafe target is
 # skipped and reported, with divergence recorded durably by fm-ff-lib.sh.
@@ -25,7 +28,7 @@
 # It does NOT re-read AGENTS.md or nudge secondmates itself - those are LLM /
 # tmux actions the skill performs. The script's job is the safe git mechanics
 # plus a parseable summary telling the caller what to do next:
-#   - one status line per target (updated/already current/skipped)
+#   - one status line per target (updated/rebased/already current/skipped)
 #   - reread-firstmate: yes|no    (did the running firstmate's instructions change)
 #   - restart-secondmates: fm-<id>...|none (every live secondmate this pass left
 #     on origin's tip - advanced OR already there - whose recorded runtime can
@@ -88,7 +91,7 @@ fi
 # --- main firstmate repo ---------------------------------------------------
 
 reread_firstmate="no"
-ff_target "$FM_ROOT" "firstmate" origin no no
+ff_target "$FM_ROOT" "firstmate" origin no no "" "" yes
 if [ "$FF_STATUS" = "updated" ]; then
   if [ -n "$FF_INSTR" ]; then
     reread_firstmate="yes"

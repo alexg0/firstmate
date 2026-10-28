@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Tests for bin/fm-update.sh: fast-forward-only self-update of a running
+# Tests for bin/fm-update.sh: guarded self-update of a running
 # firstmate repo and every registered secondmate home.
 #
 # The guarantees under test mirror fm-fleet-sync.sh and prime directive #3:
 #   - The running firstmate repo (on its default branch) fast-forwards from
-#     origin; a leased secondmate home (detached HEAD on the default branch)
+#     origin or rebases clean local commits when origin advances; a leased
+#     secondmate home (detached HEAD on the default branch)
 #     fast-forwards the same way.
-#   - A dirty, offline, wrong-branch, or genuinely unique diverged target is
+#   - A dirty, offline, wrong-branch, or genuinely unique diverged secondmate is
 #     skipped and reported, never forced or stashed, so unlanded work survives.
 #     Divergence leaves a durable reconciliation record, while a clean local
 #     result already present upstream after a squash merge heals automatically.
@@ -174,6 +175,91 @@ test_updates_main_and_secondmate() {
   [ "$(git -C "$w/sm1" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" -eq 2 ] \
     || fail "secondmate tip is not a single-parent fast-forward"
   pass "T1 main + secondmate fast-forward (single-parent), reread + restart signalled"
+}
+
+# Primary-only local history is replayed onto an advanced origin.
+test_primary_local_rebase() {
+  local w out before upstream
+  w=$(new_world primary-rebase)
+  printf 'local intake\n' > "$w/main/local.txt"
+  git -C "$w/main" add local.txt
+  git -C "$w/main" commit -qm local-intake
+  before=$(git -C "$w/main" rev-parse HEAD)
+  git -C "$w/main" branch retained-local
+  git -C "$w/main" config rebase.updateRefs true
+  git -C "$w/main" config rebase.autoStash true
+  bump_origin "$w" instr
+  upstream=$(git -C "$w/seed" rev-parse HEAD)
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "firstmate: rebased 1 local commit(s) onto $upstream" "primary rebase reported"
+  assert_contains "$out" "previous HEAD: $before" "pre-rebase head remains recoverable"
+  assert_contains "$out" "reread-firstmate: yes" "rebased instruction changes trigger reread"
+  [ "$(git -C "$w/main" rev-parse HEAD^)" = "$upstream" ] || fail "local commit was not replayed onto origin"
+  assert_grep 'local intake' "$w/main/local.txt" "local content lost"
+  [ "$(git -C "$w/main" rev-parse retained-local)" = "$before" ] || fail "rebase moved another local branch"
+  [ "$(git -C "$w/main" symbolic-ref --short HEAD)" = main ] || fail "primary left main"
+  [ -z "$(git -C "$w/main" status --porcelain)" ] || fail "rebase left dirty state"
+  out=$(run_update "$w")
+  assert_contains "$out" "firstmate: skipped: diverged from origin/main" "local-only ahead history stays put"
+  assert_contains "$out" "reread-firstmate: no" "no new upstream means no reread"
+  pass "primary local commit rebased and reported"
+}
+
+test_primary_conflicting_rebase() {
+  local w out before
+  w=$(new_world primary-conflict)
+  printf 'local instructions\n' > "$w/main/AGENTS.md"
+  git -C "$w/main" commit -qam local-instructions
+  before=$(git -C "$w/main" rev-parse HEAD)
+  bump_origin "$w" instr
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "firstmate: skipped: diverged from origin/main" "conflict retains diverged skip"
+  assert_contains "$out" "reread-firstmate: no" "aborted rebase does not trigger reread"
+  [ "$(git -C "$w/main" rev-parse HEAD)" = "$before" ] || fail "conflict moved primary HEAD"
+  [ "$(git -C "$w/main" symbolic-ref --short HEAD)" = main ] || fail "conflict left detached HEAD"
+  assert_grep 'local instructions' "$w/main/AGENTS.md" "abort lost local content"
+  [ -z "$(git -C "$w/main" status --porcelain)" ] || fail "conflict left dirty state"
+  assert_absent "$w/main/.git/rebase-merge" "rebase state was not aborted"
+  assert_absent "$w/main/.git/rebase-apply" "apply state was not aborted"
+  pass "primary conflicting rebase aborts without changing main"
+}
+
+test_primary_rebase_guards() {
+  local w out before
+  w=$(new_world primary-guards)
+  printf 'local intake\n' > "$w/main/local.txt"
+  git -C "$w/main" add local.txt
+  git -C "$w/main" commit -qm local-intake
+  before=$(git -C "$w/main" rev-parse HEAD)
+  bump_origin "$w" readme
+  printf 'uncommitted\n' >> "$w/main/local.txt"
+  out=$(run_update "$w")
+  assert_contains "$out" "firstmate: skipped: dirty working tree" "dirty primary is skipped"
+  [ "$(git -C "$w/main" rev-parse HEAD)" = "$before" ] || fail "dirty primary moved"
+  assert_grep 'uncommitted' "$w/main/local.txt" "dirty primary content lost"
+  git -C "$w/main" add local.txt
+  git -C "$w/main" commit -qm another-local
+  before=$(git -C "$w/main" rev-parse HEAD)
+  # A real empty cherry-pick leaves a clean worktree with an active operation.
+  if git -C "$w/main" cherry-pick "$before" >/dev/null 2>&1; then
+    fail "fixture did not leave an empty cherry-pick"
+  fi
+  assert_present "$w/main/.git/CHERRY_PICK_HEAD" "fixture operation missing"
+  [ -z "$(git -C "$w/main" status --porcelain)" ] || fail "operation fixture is dirty"
+  out=$(run_update "$w")
+  assert_contains "$out" "git operation in progress" "existing operation is skipped"
+  assert_present "$w/main/.git/CHERRY_PICK_HEAD" "updater aborted a preexisting operation"
+  [ "$(git -C "$w/main" rev-parse HEAD)" = "$before" ] || fail "existing operation moved"
+  git -C "$w/main" cherry-pick --abort
+  out=$(run_update "$w")
+  assert_contains "$out" "firstmate: rebased 2 local commit(s)" "multiple commits replayed"
+  assert_contains "$out" "reread-firstmate: no" "non-instruction rebase does not trigger reread"
+  [ "$(git -C "$w/main" rev-list --count origin/main..HEAD)" = 2 ] || fail "rebase lost local commits"
+  pass "primary rebase preserves dirty content and preexisting operations"
 }
 
 # --- T3: README-only change does not trigger a reread ----------------------
@@ -557,6 +643,9 @@ test_primary_update_rebinds_local_watch() {
 }
 
 test_updates_main_and_secondmate
+test_primary_local_rebase
+test_primary_conflicting_rebase
+test_primary_rebase_guards
 test_reread_gate_is_instruction_only
 test_bin_only_advance_restarts
 test_unprovable_runtime_gets_fallback_nudge

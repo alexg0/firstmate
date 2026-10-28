@@ -4,7 +4,7 @@
 #
 # This is the one implementation of "advance a firstmate checkout to a base by a
 # clean fast-forward, never forcing, merging, or stashing" used by every sync
-# path:
+# path (the primary origin update may opt into rebasing local commits):
 #   - /updatefirstmate (bin/fm-update.sh) pulls from origin: base_mode "origin".
 #   - the local-HEAD secondmate sync (bin/fm-spawn.sh on launch, bin/fm-bootstrap.sh
 #     on startup) follows the PRIMARY checkout's current default-branch commit:
@@ -379,11 +379,14 @@ live_secondmate_meta_records() {
 # wrong-branch target and leave its work untouched. An optional secondmate id
 # enables the content-equivalent divergence proof and durable marker described
 # in this file's header.
+# The eighth argument opts ONLY the primary origin update into a clean rebase.
+# Local-only ahead history is left alone. A failed rebase is aborted; the old
+# HEAD is printed on success for recovery. Secondmate callers never opt in.
 FF_STATUS=""
 FF_INSTR=""
 ff_target() {
   local dir=$1 label=$2 base_mode=$3 allow_detached=${4:-no} ignore_seed_marker=${5:-no}
-  local secondmate_id=${6:-} reconciliation_state=${7:-}
+  local secondmate_id=${6:-} reconciliation_state=${7:-} rebase_primary=${8:-no}
   FF_STATUS="skipped"
   FF_INSTR=""
 
@@ -452,6 +455,53 @@ ff_target() {
     return 0
   fi
   if ! git -C "$dir" merge-base --is-ancestor HEAD "$base" 2>/dev/null; then
+    if [ "$rebase_primary" = yes ] && [ "$base_mode" = origin ] \
+      && [ "$allow_detached" = no ] && [ -z "$secondmate_id" ] \
+      && ! git -C "$dir" merge-base --is-ancestor "$base_rev" "$local_rev" 2>/dev/null \
+      && git -C "$dir" merge-base "$local_rev" "$base_rev" >/dev/null 2>&1; then
+      local state_path operation local_count
+      # Never abort an operation that was already in progress on entry.
+      for operation in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD sequencer; do
+        state_path=$(git -C "$dir" rev-parse --git-path "$operation")
+        case "$state_path" in /*) ;; *) state_path="$dir/$state_path" ;; esac
+        if [ -e "$state_path" ]; then
+          echo "$label: skipped: diverged from $base (git operation in progress)"
+          return 0
+        fi
+      done
+      local_count=$(git -C "$dir" rev-list --count "$base_rev..$local_rev")
+      # Override interactive/autostash/updateRefs configuration. Preserve local
+      # merge topology and pin the fetched tip rather than consulting forkPoint.
+      if GIT_TERMINAL_PROMPT=0 GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true \
+        git -C "$dir" -c core.hooksPath=/dev/null rebase --no-fork-point \
+          --no-autostash --no-update-refs --no-autosquash --no-gpg-sign --rebase-merges \
+          "$base_rev" >/dev/null 2>&1; then
+        instr=$(changed_instr "$dir" "$local_rev")
+        FF_STATUS="updated"
+        FF_INSTR="$instr"
+        echo "$label: rebased $local_count local commit(s) onto $base_rev (previous HEAD: $local_rev)${instr:+ (instructions changed: $instr)}"
+        return 0
+      fi
+      git -C "$dir" -c core.hooksPath=/dev/null rebase --abort >/dev/null 2>&1 || true
+      # A refusal before starting needs no abort. Verify restoration either
+      # way, and fail loudly rather than claim a safely skipped update.
+      if [ "$(git -C "$dir" rev-parse HEAD)" != "$local_rev" ] \
+        || [ "$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null)" != "$cur" ] \
+        || [ -n "$(dirty_status "$dir")" ]; then
+        echo "$label: failed: rebase abort did not restore checkout; previous HEAD: $local_rev"
+        return 1
+      fi
+      for operation in rebase-merge rebase-apply; do
+        state_path=$(git -C "$dir" rev-parse --git-path "$operation")
+        case "$state_path" in /*) ;; *) state_path="$dir/$state_path" ;; esac
+        if [ -e "$state_path" ]; then
+          echo "$label: failed: rebase state remains; previous HEAD: $local_rev"
+          return 1
+        fi
+      done
+      echo "$label: skipped: diverged from $base (rebase failed; previous HEAD: $local_rev)"
+      return 0
+    fi
     if [ -n "$secondmate_id" ] && [ -n "$reconciliation_state" ] \
       && divergence_is_redundant "$dir" "$local_rev" "$base_rev"; then
       instr=$(changed_instr "$dir" "$base")

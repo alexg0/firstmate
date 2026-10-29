@@ -1,0 +1,28 @@
+== fixed: fm-spawn exit=0 after 73s, discovery sleeps=60
+fm-gate-refuse: gate agent lifecycle permitted only against lab home $LAB/home
+spawned live-late-fixed harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-live-late-fixed worktree=$LAB/wt
+-- state meta:
+window=firstmate:fm-live-late-fixed
+worktree=$LAB/wt
+-- lab tmux windows / pane paths:
+bash $LAB/project
+fm-live-late-fixed $LAB/wt
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/pre-rebase: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/pre-applypatch: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/pre-auto-gc: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/pre-merge-commit: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/post-commit: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/sendemail-validate: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/applypatch-msg: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/prepare-commit-msg: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/post-checkout: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/post-applypatch: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/post-rewrite: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/commit-msg: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/pre-push: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/post-merge: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks/pre-commit: Permission denied
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state/live-late-fixed.git-hooks: Directory not empty
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home/state: Directory not empty
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC/home: Directory not empty
+rm: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-lab.Kv6VWC: Directory not empty

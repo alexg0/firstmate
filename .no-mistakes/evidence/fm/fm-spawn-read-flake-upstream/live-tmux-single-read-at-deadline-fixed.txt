@@ -1,0 +1,8 @@
+== deadline: fm-spawn exit=1 after 69s, discovery sleeps=60
+fm-gate-refuse: gate agent lifecycle permitted only against lab home $LAB/home
+error: treehouse get did not enter an isolated worktree within 60s (last seen '$LAB/wt': it is an isolated worktree, but no second read agreed with it; spawning project '$LAB/project'); inspect window firstmate:fm-live-late-deadline
+-- state meta:
+(no meta)
+-- lab tmux windows / pane paths:
+bash $LAB/project
+fm-live-late-deadline $LAB/wt

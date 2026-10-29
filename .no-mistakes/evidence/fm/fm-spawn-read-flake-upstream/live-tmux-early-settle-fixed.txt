@@ -1,0 +1,9 @@
+== early: fm-spawn exit=0 after 6s, discovery sleeps=2
+fm-gate-refuse: gate agent lifecycle permitted only against lab home $LAB/home
+spawned live-late-early harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-live-late-early worktree=$LAB/wt
+-- state meta:
+window=firstmate:fm-live-late-early
+worktree=$LAB/wt
+-- lab tmux windows / pane paths:
+bash $LAB/project
+fm-live-late-early $LAB/wt

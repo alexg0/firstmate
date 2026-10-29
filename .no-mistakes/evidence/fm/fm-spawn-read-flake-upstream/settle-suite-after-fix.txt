@@ -1,0 +1,8 @@
+ok - a single transient stale pane_current_path read is not accepted as the worktree
+ok - an already-settled pane confirms on the next read, not a whole extra cycle
+ok - a transient primary-checkout pane read is not accepted as the worktree
+ok - a pane stuck on the primary checkout fails loudly at the deadline
+ok - the final wait ends with an observation and confirms a late isolated worktree
+ok - an isolated path seen only at the deadline is refused without confirmation
+ok - a project with an unborn HEAD is refused at once with its cause named
+# all fm-spawn-worktree-settle tests passed

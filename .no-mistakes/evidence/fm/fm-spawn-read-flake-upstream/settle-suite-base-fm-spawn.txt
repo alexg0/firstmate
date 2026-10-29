@@ -1,0 +1,8 @@
+ok - a single transient stale pane_current_path read is not accepted as the worktree
+ok - an already-settled pane confirms on the next read, not a whole extra cycle
+ok - a transient primary-checkout pane read is not accepted as the worktree
+ok - a pane stuck on the primary checkout fails loudly at the deadline
+not ok - a worktree reached before the final sleep needs a confirmation read
+warning: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-spawn-worktree-settle.tA8yQx/settle-late-worktree/home/data/settle-late-worktree-z6/launch-brief.md records no ship branch; defaulting to legacy branch fm/settle-late-worktree-z6
+warning: /private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-spawn-worktree-settle.tA8yQx/settle-late-worktree/home/data/settle-late-worktree-z6/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: treehouse get did not enter an isolated worktree within 60s (last seen '/private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-spawn-worktree-settle.tA8yQx/settle-late-worktree/wt': it is an isolated worktree, but no second read agreed with it; spawning project '/private/var/folders/fp/zmwv1bws3zl9_m8fkr05rfy00000gn/T/fm-spawn-worktree-settle.tA8yQx/settle-late-worktree/project'); inspect window firstmate:fm-settle-late-worktree-z6: expected exit 0, got 1

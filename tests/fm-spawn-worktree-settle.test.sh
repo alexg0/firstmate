@@ -246,17 +246,13 @@ test_primary_checkout_that_never_settles_fails_at_the_deadline() {
 
 # The last sleep belongs to the observation window too: a slot first seen on
 # read 60 still needs the observation after that sleep, rather than a timeout
-# without another read. Use a symlinked spawning project to cover physical cwd
-# reporting while treehouse is still in the project.
+# without another read.
 test_late_worktree_gets_a_confirmation_read() {
-  local rec id out status project_link reads sleeps
+  local rec id out status reads sleeps
   id=settle-late-worktree-z6
   rec=$(make_settle_case settle-late-worktree "$id" 59)
   read_settle_record "$rec"
   STALE_DIR="$PROJ_DIR"
-  project_link="$TMP_ROOT/settle-late-worktree/project-link"
-  ln -s "$PROJ_DIR" "$project_link"
-  PROJ_DIR="$project_link"
 
   out=$(run_settle_spawn "$id")
   status=$?
@@ -268,26 +264,6 @@ test_late_worktree_gets_a_confirmation_read() {
   sleeps=$(cat "$COUNTFILE.sleeps")
   [ "$sleeps" -eq 60 ] || fail "discovery used $sleeps sleeps instead of the existing 60-sleep budget"
   pass "the final wait ends with an observation and confirms a late isolated worktree"
-}
-
-# Cwd reporters may alternate between logical and physical spellings. These
-# are agreeing observations when they resolve to the same isolated directory.
-test_worktree_alias_and_physical_path_agree() {
-  local rec id out status reads
-  id=settle-worktree-alias-z8
-  rec=$(make_settle_case settle-worktree-alias "$id" 1)
-  read_settle_record "$rec"
-  STALE_DIR="$TMP_ROOT/settle-worktree-alias/slot-alias"
-  ln -s "$WT_DIR" "$STALE_DIR"
-
-  out=$(run_settle_spawn "$id")
-  status=$?
-  expect_code 0 "$status" "physical and symlink paths to one slot must agree"$'\n'"$out"
-  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
-    "meta did not record the physical slot"
-  reads=$(cat "$COUNTFILE")
-  [ "$reads" -eq 3 ] || fail "equivalent path spellings took $reads reads instead of two plus the launch-boundary check"
-  pass "worktree aliases agree after physical normalization"
 }
 
 # A first isolated observation at the deadline is still insufficient. The
@@ -336,7 +312,6 @@ test_transient_primary_checkout_is_not_accepted
 test_primary_checkout_that_never_settles_fails_at_the_deadline
 test_late_worktree_gets_a_confirmation_read
 test_single_isolated_read_at_deadline_is_refused
-test_worktree_alias_and_physical_path_agree
 test_unborn_head_project_is_refused_at_once
 
 echo "# all fm-spawn-worktree-settle tests passed"

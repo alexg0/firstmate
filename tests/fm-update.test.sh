@@ -26,6 +26,11 @@
 #   - Secondmate homes resolve from both state/<id>.meta and the
 #     data/secondmates.md registry, deduped, and the firstmate repo is never
 #     re-processed as one of its own secondmates.
+#   - An optional config/self-update-source moves the primary to that one remote
+#     branch instead of origin, under the same fast-forward guards, and local
+#     secondmates (linked worktree or standalone clone) follow the primary's
+#     resulting commit; an unusable file refuses the whole update before
+#     anything moves rather than falling back to origin.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -791,6 +796,170 @@ test_primary_update_rebinds_local_watch() {
   pass "T12 a self-update rebinds a locally armed watch on the primary"
 }
 
+# --- self-update source helpers -------------------------------------------
+
+# Add a standalone-clone secondmate home (its own object store, unlike add_sm's
+# linked worktree), plus its state meta. Args: world id.
+add_standalone_sm() {
+  local w=$1 id=$2
+  git clone -q "$w/origin.git" "$w/$id"
+  git -C "$w/$id" remote set-head origin main >/dev/null 2>&1 || true
+  {
+    printf 'window=main:fm-%s\n' "$id"
+    printf 'endpoint_task_id=%s\n' "$id"
+    printf 'worktree=%s/%s\n' "$w" "$id"
+    printf 'project=%s/%s\n' "$w" "$id"
+    printf 'kind=secondmate\n'
+    printf 'harness=claude\n'
+    printf 'home=%s/%s\n' "$w" "$id"
+  } > "$w/home/state/$id.meta"
+  printf 'fm-%s\n' "$id" >> "$w/fake/windows"
+  printf '%s\n' "$id" > "$w/$id/.fm-secondmate-home"
+}
+
+# Create a bare fork whose `carry` branch is origin's current main plus one
+# carried commit touching the instruction surface, and add it to the primary
+# as the remote `fork`. Echoes the carry commit.
+add_fork_carry() {
+  local w=$1 carry
+  git init -q --bare "$w/fork.git"
+  git -C "$w/seed" pull -q origin main >/dev/null 2>&1 || true
+  git -C "$w/seed" checkout -q -b carry-work
+  printf 'carried\n' >> "$w/seed/AGENTS.md"
+  printf 'echo carried\n' > "$w/seed/bin/tool.sh"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm carried-fix
+  git -C "$w/seed" push -q "$w/fork.git" carry-work:carry
+  carry=$(git -C "$w/seed" rev-parse HEAD)
+  git -C "$w/seed" checkout -q main
+  git -C "$w/main" remote add fork "$w/fork.git"
+  printf '%s\n' "$carry"
+}
+
+write_source() {
+  mkdir -p "$1/home/config"
+  printf '%s\n' "$2" > "$1/home/config/self-update-source"
+}
+
+# --- T13: the primary follows the configured branch; secondmates follow it ---
+test_self_update_source_follows_branch() {
+  local w out carry
+  w=$(new_world t13)
+  add_sm "$w" sm1
+  add_standalone_sm "$w" sm2
+  carry=$(add_fork_carry "$w")
+  # origin also moves, and that commit is NOT in the carry branch, so landing
+  # on it would prove origin was used.
+  bump_origin "$w" readme
+  write_source "$w" "fork carry"
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "self-update source: fork carry" "the configured source is announced"
+  assert_contains "$out" "firstmate: updated " "the primary advanced"
+  assert_equals "$(git -C "$w/main" rev-parse HEAD)" "$carry" "the primary did not land on the configured branch"
+  [ "$(git -C "$w/main" symbolic-ref --short HEAD 2>/dev/null)" = "main" ] \
+    || fail "the primary left its default branch"
+  assert_equals "$(git -C "$w/sm1" rev-parse HEAD)" "$carry" "a linked-worktree secondmate did not follow the primary"
+  assert_equals "$(git -C "$w/sm2" rev-parse HEAD)" "$carry" "a standalone-clone secondmate did not follow the primary"
+  assert_contains "$out" "reread-firstmate: yes" "the carried instruction change triggers a reread"
+  assert_contains "$out" "fm-sm1" "the linked secondmate is routed for restart"
+  assert_contains "$out" "fm-sm2" "the standalone secondmate is routed for restart"
+  assert_not_contains "$out" "nudge-secondmates: fm" "restartable mates are not nudged"
+
+  # Removing the file returns to origin and preserves the clean carried commit
+  # through the primary-only rebase. Secondmate divergence still stays guarded.
+  rm "$w/home/config/self-update-source"
+  out=$(run_update "$w")
+  assert_not_contains "$out" "self-update source:" "an absent file must not announce a source"
+  assert_contains "$out" "firstmate: rebased 1 local commit(s) onto" "without the file the origin path preserves the carried commit"
+  git -C "$w/main" merge-base --is-ancestor origin/main HEAD || fail "the returned origin path is still behind"
+  assert_equals "$(cat "$w/main/AGENTS.md")" "$(git -C "$w/main" show "$carry:AGENTS.md")" "the origin path lost the carried instructions"
+  assert_equals "$(cat "$w/main/README.md")" "$(git -C "$w/main" show origin/main:README.md)" "the origin path lost the upstream change"
+  assert_equals "$(git -C "$w/main" rev-list --count origin/main..HEAD)" 1 "the carried change was not preserved as one local commit"
+  assert_equals "$(git -C "$w/sm1" rev-parse HEAD)" "$carry" "removing the source rewrote a secondmate"
+  assert_equals "$(git -C "$w/sm2" rev-parse HEAD)" "$carry" "removing the source rewrote a standalone secondmate"
+  pass "T13 config/self-update-source moves the primary and its local secondmates to that branch"
+}
+
+# Configured sources retain fast-forward-only updates while optional mirroring
+# uses the resulting primary tip and refuses either protected repository.
+test_self_update_source_mirroring() {
+  local w destination carry out before_origin before_source
+  for destination in mirror fork origin; do
+    w=$(new_world "source-push-$destination")
+    add_push_remote "$w"
+    carry=$(add_fork_carry "$w")
+    write_source "$w" "fork carry"
+    printf '%s\n' "$destination" > "$w/home/config/update-push-remote"
+    before_origin=$(git -C "$w/origin.git" rev-parse main)
+    before_source=$(git -C "$w/fork.git" rev-parse carry)
+    out=$(run_update "$w")
+    assert_equals "$(git -C "$w/main" rev-parse HEAD)" "$carry" "configured source update succeeded"
+    if [ "$destination" = mirror ]; then
+      assert_contains "$out" 'firstmate push: updated mirror/main' "configured source mirrors successfully"
+      assert_equals "$(git -C "$w/mirror.git" rev-parse main)" "$carry" "mirror receives the configured source tip"
+    else
+      assert_contains "$out" 'firstmate push: skipped: destination is the update source' "protected destination refused"
+    fi
+    assert_equals "$(git -C "$w/origin.git" rev-parse main)" "$before_origin" "origin is never published to"
+    assert_equals "$(git -C "$w/fork.git" rev-parse carry)" "$before_source" "configured source is never published to"
+    if git -C "$w/fork.git" show-ref --verify --quiet refs/heads/main; then
+      fail "mirroring created a default branch on the configured source"
+    fi
+  done
+  pass "configured sources combine safely with opt-in mirroring"
+}
+
+# --- T14: an unusable config refuses before anything moves ------------------
+test_self_update_source_refuses_unusable_config() {
+  local w before value rc err
+  w=$(new_world t14)
+  add_sm "$w" sm1
+  add_fork_carry "$w" >/dev/null
+  bump_origin "$w" instr
+  before=$(git -C "$w/main" rev-parse HEAD)
+
+  for value in "nosuchremote carry" "fork" "fork carry extra" "fork bad..branch" $'fork carry\nfork other'; do
+    write_source "$w" "$value"
+    err=$(PATH="$w/fakebin:$PATH" FM_FAKE_DIR="$w/fake" \
+      FM_ROOT_OVERRIDE="$w/main" FM_HOME="$w/home" "$UPDATE" 2>&1 >/dev/null)
+    rc=$?
+    [ "$rc" -ne 0 ] || fail "an unusable self-update source ($value) did not refuse"
+    assert_contains "$err" "config/self-update-source" "the refusal ($value) must name the file"
+    assert_equals "$(git -C "$w/main" rev-parse HEAD)" "$before" "the primary moved despite an unusable source ($value)"
+    assert_equals "$(git -C "$w/sm1" rev-parse HEAD)" "$before" "a secondmate moved despite an unusable source ($value)"
+  done
+  pass "T14 an unusable config/self-update-source refuses without falling back to origin"
+}
+
+# --- T15: a rewritten (non-fast-forward) branch is skipped, never forced -------
+test_self_update_source_rewrite_is_skipped() {
+  local w out carry other
+  w=$(new_world t15)
+  add_sm "$w" sm1
+  carry=$(add_fork_carry "$w")
+  write_source "$w" "fork carry"
+  out=$(run_update "$w")
+  assert_equals "$(git -C "$w/main" rev-parse HEAD)" "$carry" "setup: the primary did not reach the branch"
+
+  # Replace the branch with an unrelated line of history.
+  git -C "$w/seed" checkout -q -b rewritten "$carry~1"
+  printf 'other\n' >> "$w/seed/README.md"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm rewritten
+  git -C "$w/seed" push -q -f "$w/fork.git" rewritten:carry
+  other=$(git -C "$w/seed" rev-parse HEAD)
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "firstmate: skipped: diverged from refs/remotes/fork/carry" "a rewritten branch must be skipped"
+  assert_equals "$(git -C "$w/main" rev-parse HEAD)" "$carry" "the primary was moved off its commit"
+  assert_not_equals "$(git -C "$w/main" rev-parse HEAD)" "$other" "the primary was forced to the rewritten branch"
+  assert_contains "$out" "secondmate sm1: already current" "a secondmate stays on the primary's unchanged commit"
+  pass "T15 a non-fast-forward self-update source is skipped, never forced"
+}
+
 test_updates_main_and_secondmate
 test_primary_push_opt_in
 test_primary_push_with_lease
@@ -814,5 +983,9 @@ test_firstmate_wrong_branch_skipped
 test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
 test_primary_update_rebinds_local_watch
+test_self_update_source_follows_branch
+test_self_update_source_mirroring
+test_self_update_source_refuses_unusable_config
+test_self_update_source_rewrite_is_skipped
 
 echo "# all fm-update tests passed"

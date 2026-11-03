@@ -580,8 +580,8 @@ command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
         (.probabilities | map(.value) | length) == (.probabilities | map(.value) | unique | length);
       (.answers | type) == "array" and
       (($need_rule | not) or
-        ([.answers[] | select(type == "object" and .name == "rule")] |
-          length == 1 and (.[0] | well_formed)))' \
+        (([.answers[] | select(type == "object" and .name == "rule")]) as $rule |
+          ($rule | length) == 1 and ($rule[0] | well_formed)))' \
       "$RESP_FILE" >/dev/null 2>&1 || emit_error "$OA_REASON"
     if ! jq --arg model "$DISPATCH_MODEL" '
       def well_formed: .type == "choice" and

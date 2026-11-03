@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Self-update a running firstmate and its secondmates from origin or a configured source.
+# Self-update a running firstmate and its secondmates to the latest origin.
 #
-# Mechanical half of the /updatefirstmate skill. Updates the running firstmate
-# default branch from origin, rebasing clean local commits when origin advances,
-# then fast-forwards every registered secondmate home. A failed primary rebase
-# aborts to the original HEAD and reports a diverged skip; success prints the
-# previous HEAD for recovery and participates in the instruction reread decision.
+# Mechanical half of the /updatefirstmate skill. Fast-forwards the running
+# firstmate repo's default branch from origin, then fast-forwards every
+# registered secondmate home.
 #
 # Self-update source. The optional local, gitignored, not-inherited
 # $FM_HOME/config/self-update-source replaces origin as the source for this
@@ -13,7 +11,7 @@
 # already exists in this repository and a branch on it (for example a fork
 # branch carrying unmerged fixes on top of upstream). When it is present:
 #   - the primary fetches exactly that branch into refs/remotes/<remote>/<branch>
-#     and fast-forwards to it without replaying local commits;
+#     and fast-forwards to it under the same guards as the origin path;
 #   - local secondmates advance to the primary's resulting default-branch commit
 #     (the same commit the startup secondmate sync follows), importing it from
 #     the primary first when a standalone clone lacks it;
@@ -24,13 +22,13 @@
 # malformed file, an unknown remote, or an invalid branch name stops the whole
 # update before anything moves; it never falls back to origin. Nothing else
 # reads the file: worker spawns, review diffs, the cleanup landed-work test,
-# lint, and default-branch detection keep using origin. Configured sources
-# stay fast-forward only, so the named branch must only ever move forward.
+# lint, and default-branch detection keep using origin. The fast-forward-only
+# guards still apply, so the named branch must only ever move forward.
 #
 # Local homes are treehouse worktrees or standalone clones; remote routes update
 # their configured code root on that host and then fast-forward the persistent
-# home to that root. Secondmates and configured sources stay fast-forward only,
-# exactly like fm-fleet-sync.sh: never force, create a merge commit, or stash.
+# home to that root. FAST-FORWARD ONLY, exactly like
+# fm-fleet-sync.sh: never force, never create a merge commit, never stash.
 # A secondmate divergence whose complete local tree result is already present at
 # the target is reconciled with reset --keep; every other unsafe target is
 # skipped and reported, with divergence recorded durably by fm-ff-lib.sh.
@@ -49,7 +47,7 @@
 # It does NOT re-read AGENTS.md or nudge secondmates itself - those are LLM /
 # tmux actions the skill performs. The script's job is the safe git mechanics
 # plus a parseable summary telling the caller what to do next:
-#   - one status line per target (updated/rebased/already current/skipped)
+#   - one status line per target (updated/already current/skipped)
 #   - reread-firstmate: yes|no    (did the running firstmate's instructions change)
 #   - restart-secondmates: fm-<id>...|none (every live secondmate this pass left
 #     on the update target's tip - advanced OR already there - whose recorded
@@ -248,7 +246,7 @@ if [ -n "$SELF_UPDATE_REMOTE" ]; then
     echo "firstmate: skipped: fetch of $SELF_UPDATE_REMOTE $SELF_UPDATE_BRANCH failed"
   fi
 else
-  ff_target "$FM_ROOT" "firstmate" origin no no "" "" yes
+  ff_target "$FM_ROOT" "firstmate" origin no no
 fi
 if [ "$FF_STATUS" = "updated" ]; then
   if [ -n "$FF_INSTR" ]; then

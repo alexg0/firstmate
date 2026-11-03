@@ -1,0 +1,9 @@
+warning: /tmp/fm-projected-cd.suwpLJ/case-1/home/data/projected-cd/launch-brief.md records no ship branch; defaulting to legacy branch fm/projected-cd
+warning: /tmp/fm-projected-cd.suwpLJ/case-1/home/data/projected-cd/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: task projected-cd's worker started in '/private/tmp/fm-projected-cd.suwpLJ/project', not its recorded worktree '/tmp/fm-projected-cd.suwpLJ/case-1/slot'; refusing to continue outside the copy holding its work
+error: Herdr pane 'fm-lab-fm-herdr-project-70091-5521:w2:p2': last foreground_cwd='/private/tmp/fm-projected-cd.suwpLJ/project', agent_status='unknown'
+warning: herdr presentation cleanup could not verify the exact pane; refusing focus-unsafe pane close
+warning: the worktree /tmp/fm-projected-cd.suwpLJ/case-1/slot stays leased to projected-cd after the failed spawn; once inspected, run 'treehouse return --force /tmp/fm-projected-cd.suwpLJ/case-1/slot' from /tmp/fm-projected-cd.suwpLJ/project
+cd sends observed: 2
+ok - Herdr 0.9.5 never-moving projected pane is refused with diagnostics after one resend, no metadata
+env -u NO_MISTAKES_GATE bash $S/never.sh  7.17s user 8.30s system 16% cpu 1:31.86 total

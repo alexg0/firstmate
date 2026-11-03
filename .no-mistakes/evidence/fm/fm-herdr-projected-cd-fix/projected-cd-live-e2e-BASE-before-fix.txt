@@ -1,0 +1,7 @@
+ok - Herdr 0.9.5 projected spawn enters its recorded copy (delayed=0)
+warning: /tmp/fm-projected-cd.L2uboD/case-1/home/data/projected-cd/launch-brief.md records no ship branch; defaulting to legacy branch fm/projected-cd
+warning: /tmp/fm-projected-cd.L2uboD/case-1/home/data/projected-cd/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: task projected-cd's worker started in '/private/tmp/fm-projected-cd.L2uboD/project', not its recorded worktree '/tmp/fm-projected-cd.L2uboD/case-1/slot'; refusing to continue outside the copy holding its work
+warning: herdr presentation cleanup could not verify the exact pane; refusing focus-unsafe pane close
+warning: the worktree /tmp/fm-projected-cd.L2uboD/case-1/slot stays leased to projected-cd after the failed spawn; once inspected, run 'treehouse return --force /tmp/fm-projected-cd.L2uboD/case-1/slot' from /tmp/fm-projected-cd.L2uboD/project
+not ok - Herdr 0.9.5 projected spawn failed (delayed=1)

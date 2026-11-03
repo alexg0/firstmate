@@ -1,0 +1,25 @@
+FM_TEST_BEGIN 2026-11-03T20:00:06Z tests/fm-jev-mem-guard.test.sh family=unclassified expected_gate_skip=none
+Running Pattern 46 regression tests...
+ok - shellcheck clean
+ok - python syntax clean
+ok - --help works
+ok - json audit schema valid
+fm-jev-mem-guard — 2026-11-03T20:00:07Z
+  • RAM: 75.8% used (23.28 GB available / 96.0 GB total)
+  • Swap: 47.7% used (0.48 GB used / 1.0 GB total)
+  • Status: OK
+  • Recommendation: Memory and swap utilization are within thresholds; the caller should continue unchanged.
+ok - --check exits 0 with pass-forcing thresholds
+fm-jev-mem-guard — 2026-11-03T20:00:08Z
+  • RAM: 75.8% used (23.23 GB available / 96.0 GB total)
+  • Swap: 47.7% used (0.48 GB used / 1.0 GB total)
+  • Status: CRITICAL
+  • Recommendation: Memory or swap utilization is at or above a critical threshold; this host condition can explain worker silence while it holds.
+ok - --check exits 1 with fail-forcing thresholds
+ok - text mode runs cleanly
+ok - Darwin CLI fake-command cases: page sizes, thresholds, swap, invalid data, timeout, failure
+ok - all Pattern 46 memory guard tests passed
+FM_TEST_END 2026-11-03T20:00:10Z tests/fm-jev-mem-guard.test.sh exit=0 duration_ms=3579 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=4015
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=3579 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-jev-mem-guard.test.sh duration_ms=3579

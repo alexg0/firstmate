@@ -1,0 +1,64 @@
+$ git show ed1eb1d7:bin/fm-jev-mem-guard.py > /tmp/base.py; python3 /tmp/base.py --json  (BEFORE)
+{
+  "name": "fm-jev-mem-guard",
+  "checked_at": "2026-11-03T19:59:49Z",
+  "status": "UNKNOWN",
+  "recommendation": "/proc/meminfo is unreadable or incomplete on this host; the verdict is withheld rather than fabricated.",
+  "reason": "meminfo-unavailable",
+  "summary": {
+    "mem_total_gb": null,
+    "mem_available_gb": null,
+    "mem_used_pct": null,
+    "swap_total_gb": null,
+    "swap_used_gb": null,
+    "swap_used_pct": null
+  },
+  "top_processes": []
+}
+exit=0
+
+$ bin/fm-jev-mem-guard.py --json  (AFTER)
+{
+  "name": "fm-jev-mem-guard",
+  "checked_at": "2026-11-03T19:59:49Z",
+  "status": "OK",
+  "recommendation": "Memory and swap utilization are within thresholds; the caller should continue unchanged.",
+  "reason": null,
+  "summary": {
+    "mem_total_gb": 96.0,
+    "mem_available_gb": 24.1,
+    "mem_used_pct": 74.9,
+    "swap_total_gb": 1.0,
+    "swap_used_gb": 0.48,
+    "swap_used_pct": 47.7
+  },
+  "top_processes": []
+}
+python3 bin/fm-jev-mem-guard.py --json  0.04s user 0.03s system 33% cpu 0.226 total
+exit=0
+
+$ bin/fm-jev-mem-guard.py  (human, AFTER)
+fm-jev-mem-guard — 2026-11-03T19:59:49Z
+  • RAM: 74.9% used (24.07 GB available / 96.0 GB total)
+  • Swap: 47.7% used (0.48 GB used / 1.0 GB total)
+  • Status: OK
+  • Recommendation: Memory and swap utilization are within thresholds; the caller should continue unchanged.
+exit=0
+
+$ bin/fm-jev-mem-guard.py --check
+fm-jev-mem-guard — 2026-11-03T19:59:50Z
+  • RAM: 74.9% used (24.06 GB available / 96.0 GB total)
+  • Swap: 47.7% used (0.48 GB used / 1.0 GB total)
+  • Status: OK
+  • Recommendation: Memory and swap utilization are within thresholds; the caller should continue unchanged.
+exit=0
+
+--- host raw telemetry for cross-check
+103079215104
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                   193493.
+Pages active:                                1384788.
+Pages inactive:                              1343813.
+Pages speculative:                             39841.
+Pages throttled:                                   0.
+vm.swapusage: total = 1024.00M  used = 488.06M  free = 535.94M  (encrypted)

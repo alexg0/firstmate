@@ -1,0 +1,97 @@
+== Swap report-only: --warn-swap-pct 1 --crit-swap-pct 2 on real host (swap ~48%)
+fm-jev-mem-guard — 2026-11-03T20:00:01Z
+  • RAM: 76.4% used (22.63 GB available / 96.0 GB total)
+  • Swap: 47.7% used (0.48 GB used / 1.0 GB total)
+  • Status: OK
+  • Recommendation: Memory and swap utilization are within thresholds; the caller should continue unchanged.
+exit=0
+
+== Memory still drives verdict: --warn-mem-pct 50 --crit-mem-pct 99
+fm-jev-mem-guard — 2026-11-03T20:00:01Z
+  • RAM: 76.3% used (22.72 GB available / 96.0 GB total)
+  • Swap: 47.7% used (0.48 GB used / 1.0 GB total)
+  • Status: WARNING
+  • Recommendation: Memory or swap utilization is above a warning threshold but below a critical one; degraded but explained, see the top RSS processes.
+exit=1
+
+== Memory CRITICAL: --warn-mem-pct 10 --crit-mem-pct 20
+fm-jev-mem-guard — 2026-11-03T20:00:01Z
+  • RAM: 76.4% used (22.7 GB available / 96.0 GB total)
+  • Swap: 47.7% used (0.48 GB used / 1.0 GB total)
+  • Status: CRITICAL
+  • Recommendation: Memory or swap utilization is at or above a critical threshold; this host condition can explain worker silence while it holds.
+exit=1
+
+== Failing sysctl on PATH
+{
+  "name": "fm-jev-mem-guard",
+  "checked_at": "2026-11-03T20:00:01Z",
+  "status": "UNKNOWN",
+  "recommendation": "Host memory telemetry is unreadable or incomplete; the verdict is withheld rather than fabricated.",
+  "reason": "macos-memory-unavailable",
+  "summary": {
+    "mem_total_gb": null,
+    "mem_available_gb": null,
+    "mem_used_pct": null,
+    "swap_total_gb": null,
+    "swap_used_gb": null,
+    "swap_used_pct": null
+  },
+  "top_processes": []
+}
+exit=0
+
+== vm_stat slower than 350ms budget
+{
+  "name": "fm-jev-mem-guard",
+  "checked_at": "2026-11-03T20:00:02Z",
+  "status": "UNKNOWN",
+  "recommendation": "Host memory telemetry is unreadable or incomplete; the verdict is withheld rather than fabricated.",
+  "reason": "macos-memory-unavailable",
+  "summary": {
+    "mem_total_gb": null,
+    "mem_available_gb": null,
+    "mem_used_pct": null,
+    "swap_total_gb": null,
+    "swap_used_gb": null,
+    "swap_used_pct": null
+  },
+  "top_processes": []
+}
+real 0.41
+user 0.03
+sys 0.02
+exit=0
+
+== swap telemetry garbage, memory OK
+{
+  "name": "fm-jev-mem-guard",
+  "checked_at": "2026-11-03T20:00:02Z",
+  "status": "OK",
+  "recommendation": "Memory and swap utilization are within thresholds; the caller should continue unchanged.",
+  "reason": null,
+  "summary": {
+    "mem_total_gb": 96.0,
+    "mem_available_gb": 23.11,
+    "mem_used_pct": 75.9,
+    "swap_total_gb": null,
+    "swap_used_gb": null,
+    "swap_used_pct": null
+  },
+  "top_processes": []
+}
+exit=0
+
+== --help swap wording
+                           [--warn-swap-pct WARN_SWAP_PCT]
+                           [--crit-swap-pct CRIT_SWAP_PCT] [--json] [--check]
+
+Jev Multi-Agent Memory RSS & Swap Thrashing Guard (Pattern 46)
+--
+  --warn-swap-pct WARN_SWAP_PCT
+                        Warning threshold for swap utilization % (default:
+                        85.0); report-only on macOS, where swap total grows
+--
+  --crit-swap-pct CRIT_SWAP_PCT
+                        Critical threshold for swap utilization % (default:
+                        95.0); report-only on macOS, where swap total grows

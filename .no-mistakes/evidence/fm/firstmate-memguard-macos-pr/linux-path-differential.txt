@@ -1,0 +1,6 @@
+swapcrit base-guard.py: rc=1 CRITICAL None 96.2
+swapcrit fm-jev-mem-guard.py: rc=1 CRITICAL None 96.2
+ok base-guard.py: rc=0 OK None 4.6
+ok fm-jev-mem-guard.py: rc=0 OK None 4.6
+missing base-guard.py: rc=0 UNKNOWN meminfo-unavailable None
+missing fm-jev-mem-guard.py: rc=0 UNKNOWN meminfo-unavailable None

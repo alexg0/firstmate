@@ -1,0 +1,6 @@
+=== mode=old ===
+skip: Herdr server version 0.7.4 (protocol 17) is below the 0.8.0 presentation floor, so spawns stay flat
+exit=0
+=== mode=garbage ===
+not ok - Herdr an unreadable release could not be classified against the presentation floor
+exit=1

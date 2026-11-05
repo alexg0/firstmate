@@ -36,15 +36,56 @@ git rev-list --count HEAD..origin/main   # upstream commits carry is missing
 ```
 
 - **0** - carry already contains upstream; go to step 3.
-- **More than 0** - merge upstream into carry:
-  1. Check the merge is clean: `git merge-tree --write-tree HEAD origin/main`.
-  2. Respect the shared-material rule in `AGENTS.md` section 1: when any crewmate is live, or the merge conflicts, do not merge in the primary checkout.
-     Dispatch a `local-only` ship task on the firstmate repo whose job is "merge origin/main into carry, keep every local carry commit, resolve conflicts, run the repo's checks", land it with `bin/fm-merge-local.sh`, then continue at step 2.4.
-  3. When the fleet is empty and the merge is clean, merge directly: `git merge --no-edit origin/main`.
-     A merge commit is expected on carry; never rebase or rewrite carry history.
-  4. Run the repo's own quick checks from `CONTRIBUTING.md` (at minimum `bash -n` on changed `bin/` scripts) and stop on failure.
-  5. Push with `git push <remote> main:<branch>`, fast-forward only and never `--force`.
-     If the push is rejected, stop and report.
+- **More than 0** - merge programmatically in a temporary detached worktree, regardless of live crewmates.
+  Never merge in the primary checkout; it stays unchanged until step 3.
+  Substitute the checked carry remote and branch below, then run under Bash from the home repo root:
+
+```bash
+(
+  set -euo pipefail
+  remote=<remote>
+  branch=<branch>
+  scratch=$(mktemp -d "${TMPDIR:-/tmp}/firstmate-carry.XXXXXX")
+  worktree="$scratch/merge"
+  cleanup() {
+    result=$?
+    trap - EXIT
+    if [ -e "$worktree/.git" ]; then
+      if git -C "$worktree" rev-parse -q --verify MERGE_HEAD >/dev/null; then
+        git -C "$worktree" merge --abort || result=1
+      fi
+      git worktree remove "$worktree" || result=1
+    fi
+    rmdir "$scratch" || result=1
+    exit "$result"
+  }
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  git worktree add --detach "$worktree" "$remote/$branch"
+  before=$(git -C "$worktree" rev-parse HEAD)
+  if ! git -C "$worktree" merge --no-edit origin/main; then
+    git -C "$worktree" diff --name-only --diff-filter=U
+    exit 1
+  fi
+  (
+    cd "$worktree"
+    while IFS= read -r -d '' script; do
+      printf 'Syntax check: %s\n' "$script"
+      bash -n "$script"
+    done < <(git diff --name-only -z --diff-filter=ACMR "$before" HEAD -- 'bin/*.sh')
+    if [ -f bin/fm-lint.sh ]; then
+      bash bin/fm-lint.sh
+    fi
+  )
+  git -C "$worktree" push "$remote" "HEAD:$branch"
+)
+```
+
+On success, cleanup removes the worktree before step 3.
+On a merge conflict or check failure, cleanup aborts any pending merge and removes the worktree, pushes nothing, and stops the flow.
+Report the conflicting files or failed check to the captain; offer an agent task only as an option for their approval.
+If a push is rejected or cleanup fails, stop and report the exact failure without forcing or deleting anything.
 
 ## 3. Run the normal update
 

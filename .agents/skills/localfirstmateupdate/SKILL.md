@@ -83,9 +83,22 @@ git rev-list --count HEAD..origin/main   # upstream commits carry is missing
 ```
 
 On success, cleanup removes the worktree before step 3.
-On a merge conflict or check failure, cleanup aborts any pending merge and removes the worktree, pushes nothing, and stops the flow.
-Report the conflicting files or failed check to the captain; offer an agent task only as an option for their approval.
 If a push is rejected or cleanup fails, stop and report the exact failure without forcing or deleting anything.
+On a merge conflict or check failure, cleanup aborts any pending merge and removes the worktree, pushing nothing.
+After successful cleanup, report the conflicting files or failed check and automatically file and dispatch a `local-only` worker with `yolo` off, without asking the captain to approve dispatch.
+Use `bin/fm-tasks-axi.sh` for the backlog item, `bin/fm-brief.sh` for the brief, `bin/fm-dispatch-resolve.sh` for profile resolution, and `bin/fm-spawn.sh` for isolated dispatch; their headers and help own the mechanics, and `harness-adapters` owns harness selection and launch verification.
+Model the brief on `data/fm-carry-sync-1110/brief.md` when available, with this scope:
+
+- Load `firstmate-coding-guidelines` before editing.
+- Branch from local `main` (carry), then merge `origin/main` with a normal merge commit, preserving every local carry commit and both local carry behavior and upstream changes when resolving conflicts.
+  Spawn can base the worktree on `origin/main`, not carry: explicitly direct the worker to create its task branch from local `main`, not detached `HEAD`, and verify `git merge-base --is-ancestor main HEAD` before reporting ready.
+- Audit each local carry change and its net effect for full or partial redundancy with upstream, citing upstream and file evidence in the task report without dropping or reverting any local change.
+- Run quick checks: `bash -n` on changed `bin/` scripts, `bin/fm-lint.sh`, and relevant test scripts touched by the merged upstream changes or conflicted files; skip live-harness and opt-in container tests and report those omissions and any failures.
+- Stop with a committed, clean ready branch and task report; no push or PR, and no behavior changes beyond conflict resolution.
+
+Wait for the captain's approval before landing the ready branch through the guarded local-only path and pushing to the checked carry remote and branch without force.
+Only after that push succeeds, continue to step 3.
+If worker dispatch or validation fails, stop and report; never treat a failed check as a ready branch.
 
 ## 3. Run the normal update
 

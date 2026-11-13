@@ -833,6 +833,20 @@ With the file absent, nothing is armed and an already armed check prints nothing
 Creating the flag takes effect at the next session start, or immediately after `bin/fm-pr-health.sh arm`.
 The flag is a home-local preference and is not inherited by secondmate homes.
 
+## PR hold settlement (config/hold-pr-settle)
+
+The optional local, gitignored `config/hold-pr-settle` presence flag enables settlement of explicitly declared PR-dependent captain holds.
+Create the empty flag in the owning home and use `bin/fm-captain-hold.sh pr-policy` to declare each hold's settlement policy.
+The command's `--help` owns its arguments and durable record format.
+The existing contribution observer applies matching GitHub merge or closure evidence, including observations retained after the worker stops.
+It also reports an unmerged closure through the contribution notification channel, once for each owning task that is still an open captain hold after settlement.
+A task without a captain hold gets no closure notification, so enabling the flag does not replay historical closed PRs.
+No captain answer is invented, and unrelated holds remain open.
+With the flag absent, no settlement or new closure notification occurs.
+The flag takes effect on the next contribution poll and is not inherited by secondmate homes.
+The observer's existing `bin/fm-contributions.sh arm` command enables polling when it is not already armed.
+The [captain-hold policy](../.agents/skills/captain-hold-lifecycle/SKILL.md#policy) owns when a forge event may settle a question.
+
 ## Park on review
 
 The optional local, gitignored `config/park-on-review` presence flag opts this home into stopping the idle agent of a ship lane whose PR or merge request only awaits human review.
@@ -3570,7 +3584,7 @@ FM_HOME_SUMMARY_TIMEOUT=60     # seconds bounding the complete best-effort home-
 FM_HOME_SUMMARY_ERROR_LOG_MAX_BYTES=65536   # approximate size cap for state/.home-summary-refresh.log before it is trimmed to the newest 200 lines; invalid or zero values use 65536
 FM_HOME_SUMMARY_FAILURE_REPORT=2   # recorded publication failures since the ledger's own last publication before session start reports a HOME_SUMMARY line; invalid or zero values use 2
 FM_SNAPSHOT_CREW_STATE_TIMEOUT=10   # seconds bounding each local per-task current-state read inside bin/fm-fleet-snapshot.sh; remote endpoint liveness is not probed on the snapshot path
-FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=8   # maximum local tasks whose current-state and endpoint observations are collected concurrently during snapshot composition
+FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=8   # maximum local tasks whose current-state and endpoint observations, status-history fold, and row composition run concurrently during snapshot composition
 FM_SNAPSHOT_BUDGET=5                # one total seconds budget for all concurrent remote home-ledger reads
 FM_SNAPSHOT_CACHE_DIR=$FM_HOME/state/secondmate-summary-cache   # private parent-side cache of successfully fetched remote home ledgers
 FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=14  # floored elapsed-day threshold at which an undated captain hold (no hold-until; age from its UTC hold-set timestamp, falling back to since for legacy unstamped holds) is projected as a Charted Next gate instead of a live Captain's Call; 0 applies once the computed age is non-negative
